@@ -1,0 +1,66 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isValidTransaction(data) {
+      return data.name is string && data.name.size() >= 0 && data.name.size() < 100 &&
+             data.item is string && data.item.size() > 0 && data.item.size() < 200 &&
+             data.amount is number &&
+             data.type in ['借出', '借入', '個人收入', '個人支出'] &&
+             data.status in ['待確認', '已確認', '已結清', '已刪除'] &&
+             data.createdAt is string &&
+             data.creatorUid == request.auth.uid &&
+             (!('tag' in data) || (data.tag == null || (data.tag is string && data.tag.size() < 50))) &&
+             (!('creatorName' in data) || (data.creatorName == null || (data.creatorName is string && data.creatorName.size() < 100))) &&
+             (!('isPersonal' in data) || (data.isPersonal is bool));
+    }
+
+    function isValidUser(data) {
+      return data.uid == request.auth.uid &&
+             data.broId is string && data.broId.size() > 0 && data.broId.size() < 20 &&
+             data.friends is list;
+    }
+
+    match /transactions/{transactionId} {
+      // Anyone can read a transaction if they have the ID (for confirmation links)
+      allow get: if true;
+      
+      // Only authenticated users can list their own transactions or transactions where they are the debtor
+      allow list: if isAuthenticated() && (
+        resource.data.creatorUid == request.auth.uid || 
+        resource.data.name == request.auth.token.name || 
+        resource.data.name == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.broId
+      );
+      
+      // Only authenticated users can create transactions
+      allow create: if isAuthenticated() && isValidTransaction(request.resource.data);
+      
+      // Users can update status if they are the creator or if they have the link (for confirmation)
+      allow update: if (
+        // Creator can update fields, ensuring creatorUid doesn't change
+        (isAuthenticated() && resource.data.creatorUid == request.auth.uid && request.resource.data.creatorUid == request.auth.uid) ||
+        // Receiver can only update status to '已確認'
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) && 
+         request.resource.data.status == '已確認')
+      );
+      
+      // Only the creator can delete
+      allow delete: if isAuthenticated() && resource.data.creatorUid == request.auth.uid;
+    }
+
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isOwner(userId) && isValidUser(request.resource.data);
+      allow update: if isOwner(userId) && isValidUser(request.resource.data) && request.resource.data.uid == resource.data.uid && request.resource.data.broId == resource.data.broId;
+      allow delete: if isOwner(userId);
+    }
+  }
+}

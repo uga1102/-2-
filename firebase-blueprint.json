@@ -1,0 +1,44 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "A registered user.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "displayName": { "type": "string" },
+        "email": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "broId": { "type": "string", "description": "A unique ID for adding friends." },
+        "friends": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["uid", "broId"]
+    },
+    "Transaction": {
+      "title": "Transaction",
+      "description": "A debt record between two users.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "The person who owes/is owed money." },
+        "item": { "type": "string", "description": "What the debt was for." },
+        "amount": { "type": "number" },
+        "type": { "type": "string", "enum": ["借出", "借入"] },
+        "status": { "type": "string", "enum": ["待確認", "已確認"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "creatorUid": { "type": "string" },
+        "creatorName": { "type": "string" }
+      },
+      "required": ["name", "item", "amount", "type", "status", "createdAt", "creatorUid"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Registered users."
+    },
+    "/transactions/{transactionId}": {
+      "schema": "Transaction",
+      "description": "Debt transactions."
+    }
+  }
+}
