@@ -291,6 +291,7 @@ import { getFirestore, collection, addDoc, updateDoc, doc, onSnapshot, query, or
 import { Card } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
+import { useTheme } from './ThemeContext';
 
 // --- Firebase Setup ---
 let db: any = null;
@@ -346,8 +347,17 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
 
 // --- Main App ---
 
-export default function App() {
-  const [currentPage, setCurrentPage] = useState<'entry' | 'ledger' | 'friends' | 'confirm' | 'add-friend' | 'profile' | 'trash'>('entry');
+function MainScreen({ initialPath }: { initialPath: '/' | '/recycle-bin' }) {
+  const { isDarkMode, toggleDarkMode } = useTheme();
+  const [pathname, setPathname] = useState<'/' | '/recycle-bin'>(initialPath);
+  const navigate = (path: '/' | '/recycle-bin') => {
+    if (window.location.pathname !== path) {
+      window.history.pushState({}, '', path);
+    }
+    setPathname(path);
+  };
+
+  const [currentPage, setCurrentPage] = useState<'entry' | 'ledger' | 'friends' | 'confirm' | 'add-friend' | 'profile' | 'trash'>(initialPath === '/recycle-bin' ? 'trash' : 'entry');
   const [confirmTx, setConfirmTx] = useState<Transaction | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
@@ -360,7 +370,6 @@ export default function App() {
   const [aiMessage, setAiMessage] = useState<string | null>(null);
   const [isFirebaseReady, setIsFirebaseReady] = useState(false);
   const [isPro, setIsPro] = useState(false);
-  const [theme, setTheme] = useState<'light' | 'dark'>('light');
   const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [editData, setEditData] = useState({ item: '', amount: 0 });
@@ -392,6 +401,27 @@ export default function App() {
     }, 300);
     return () => clearTimeout(timer);
   }, [inputText]);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      setPathname(window.location.pathname === '/recycle-bin' ? '/recycle-bin' : '/');
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  useEffect(() => {
+    if (pathname === '/recycle-bin') {
+      setCurrentPage('trash');
+      setSelectedFriend(null);
+      return;
+    }
+
+    if (currentPage === 'trash') {
+      setCurrentPage('ledger');
+    }
+  }, [pathname, currentPage]);
 
   // Initialize Auth
   useEffect(() => {
@@ -701,7 +731,7 @@ export default function App() {
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     
     const monthlyPersonal = transactions.filter(t => 
-      t.isPersonal && new Date(t.createdAt) >= startOfMonth && t.status !== '已刪除'
+      t.isPersonal && new Date(t.createdAt) >= startOfMonth && t.status !== 'deleted'
     );
 
     const income = monthlyPersonal
@@ -718,7 +748,7 @@ export default function App() {
   const stats = getMonthlyStats();
 
   const getFriendCredit = (friendName: string) => {
-    const friendTxs = transactions.filter(t => t.name === friendName && t.status !== '已結清');
+    const friendTxs = transactions.filter(t => t.name === friendName && t.status !== 'settled');
     if (friendTxs.length === 0) return { rank: '夯', label: '粗哥認證', color: 'text-red-600', icon: 'happy', msg: `這兄弟，夠意思！` };
     
     const maxDaysOverdue = Math.max(...friendTxs.map(t => {
@@ -1015,7 +1045,7 @@ export default function App() {
     const tx = transactions.find(t => t.id === id);
     if (tx) {
       // If it's confirmed, clicking the button now means "Settle"
-      if (tx.status === '已確認') {
+      if (tx.status === 'confirmed') {
         setPendingAction({ txId: id, action: 'settle' });
         return;
       }
@@ -1029,7 +1059,7 @@ export default function App() {
     }
   };
 
-  const deleteTx = async (id: string) => {
+  const handleDelete = async (id: string) => {
     try {
       await updateDoc(doc(db, 'transactions', id), {
         status: 'deleted',
@@ -1051,7 +1081,7 @@ export default function App() {
         setAiMessage("徹底消失了！(╬ಠ益ಠ)");
       } else if (action === 'settle') {
         await updateDoc(doc(db, 'transactions', txId), {
-          status: '已結清',
+          status: 'settled',
           deletedAt: new Date().toISOString()
         });
         setAiMessage("結清成功！已移至回收桶。(๑•̀ㅂ•́)و✧");
@@ -1144,7 +1174,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-[#f0f0f0] flex justify-center items-center p-0 sm:p-6 font-sans">
+    <div className="min-h-screen bg-white text-black border-black dark:bg-black dark:text-white dark:border-white flex justify-center items-center p-0 sm:p-6 font-sans">
       {/* Simulated Mobile Device Frame */}
       <div className="w-full max-w-[430px] h-screen sm:h-[880px] bg-background flex flex-col relative sm:rounded-[50px] sm:border-[12px] sm:border-foreground sm:shadow-[0_30px_60px_rgba(0,0,0,0.3)] overflow-hidden">
         
@@ -1232,7 +1262,7 @@ export default function App() {
                     {ledgerTab === 'debts' ? '債務清單' : '私帳清單'}
                   </h2>
                   <button 
-                    onClick={() => { setCurrentPage('trash'); setSelectedFriend(null); }}
+                    onClick={() => navigate('/recycle-bin')}
                     className="p-3 border-4 border-foreground bg-background shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] dark:shadow-[4px_4px_0px_0px_rgba(255,255,255,1)] active:shadow-none active:translate-x-1 active:translate-y-1 transition-all hover:bg-muted"
                     title="回收桶"
                   >
@@ -1268,7 +1298,7 @@ export default function App() {
                               className="absolute top-1 right-1 z-20 pointer-events-none"
                             >
                               <div className="border-2 border-red-600 rounded-full p-1 flex flex-col items-center justify-center rotate-[-15deg] bg-background/80 scale-75">
-                                <span className="text-red-600 font-black text-[8px] uppercase tracking-tighter">已確認 ✅</span>
+                                <span className="text-red-600 font-black text-[8px] uppercase tracking-tighter">confirmed ✅</span>
                               </div>
                             </motion.div>
                           )}
@@ -1355,7 +1385,7 @@ export default function App() {
                                   </button>
                                 )}
                                 <button 
-                                  onClick={() => deleteTx(tx.id)}
+                                  onClick={() => handleDelete(tx.id)}
                                   className="p-1 border border-foreground bg-red-400 hover:bg-red-500 text-white transition-all shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] dark:shadow-[2px_2px_0px_0px_rgba(255,255,255,1)] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none"
                                 >
                                   <Trash2Icon size={12} />
@@ -1383,7 +1413,7 @@ export default function App() {
               >
                 <div className="flex items-center gap-4 mb-8">
                   <button 
-                    onClick={() => setCurrentPage('ledger')}
+                    onClick={() => navigate('/')}
                     className="p-2 border-4 border-foreground bg-background shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] dark:shadow-[4px_4px_0px_0px_rgba(255,255,255,1)] active:shadow-none active:translate-x-1 active:translate-y-1 transition-all"
                   >
                     <ChevronLeftIcon size={24} className="text-foreground" />
@@ -1641,7 +1671,6 @@ export default function App() {
                   </div>
                 )}
 
-            {/* Add Friend Section - REMOVED FROM HERE */}
                 
                 {/* Debt Simplification Section */}
                 {simplifiedDebts.length > 0 && !selectedFriend && (
@@ -1847,6 +1876,7 @@ export default function App() {
                     <div className="flex items-center justify-between p-4 border-4 border-foreground bg-muted">
                       <span className="font-black">深色模式 (Dark Mode)</span>
                       <button 
+                        disabled={!isPro}
                         onClick={() => {
                           if (!isPro) {
                             setAiMessage("粗哥說：深色模式是 Pro 級特權，保護眼睛也要保護粗哥的錢包喔！");
@@ -1857,17 +1887,15 @@ export default function App() {
                             }, 5000);
                             return;
                           }
-                          const newTheme = theme === 'light' ? 'dark' : 'light';
-                          setTheme(newTheme);
-                          document.documentElement.classList.toggle('dark');
+                          toggleDarkMode();
                         }}
                         className={cn(
-                          "w-14 h-8 rounded-full border-4 border-foreground relative transition-colors",
-                          theme === 'dark' ? "bg-green-400" : "bg-muted-foreground"
+                          "w-14 h-8 rounded-full border-4 border-foreground relative transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
+                          isDarkMode ? "bg-green-400" : "bg-muted-foreground"
                         )}
                       >
                         <motion.div 
-                          animate={{ x: theme === 'dark' ? 24 : 0 }}
+                          animate={{ x: isDarkMode ? 24 : 0 }}
                           className="absolute top-0.5 left-0.5 w-5 h-5 bg-background border-2 border-foreground rounded-full"
                         />
                       </button>
@@ -1889,7 +1917,7 @@ export default function App() {
       {/* Bro-Navigation Bar */}
       <div className="absolute bottom-0 left-0 w-full h-24 bg-background border-t-4 border-foreground flex items-center justify-around px-4 z-40">
         <button 
-          onClick={() => { setCurrentPage('ledger'); setSelectedFriend(null); }}
+          onClick={() => { navigate('/'); setCurrentPage('ledger'); setSelectedFriend(null); }}
           className={cn(
             "flex flex-col items-center gap-1 transition-all active:scale-90",
             currentPage === 'ledger' ? "text-foreground scale-110" : "text-muted-foreground"
@@ -1900,7 +1928,7 @@ export default function App() {
         </button>
         
         <button 
-          onClick={() => { setCurrentPage('entry'); setSelectedFriend(null); }}
+          onClick={() => { navigate('/'); setCurrentPage('entry'); setSelectedFriend(null); }}
           className={cn(
             "p-4 rounded-full border-4 border-foreground transition-all active:scale-90 -mt-12 shadow-[0_10px_20px_rgba(0,0,0,0.2)]",
             currentPage === 'entry' ? "bg-foreground text-background" : "bg-background text-foreground"
@@ -1910,7 +1938,7 @@ export default function App() {
         </button>
 
         <button 
-          onClick={() => { setCurrentPage('friends'); setSelectedFriend(null); }}
+          onClick={() => { navigate('/'); setCurrentPage('friends'); setSelectedFriend(null); }}
           className={cn(
             "flex flex-col items-center gap-1 transition-all active:scale-90",
             currentPage === 'friends' ? "text-foreground scale-110" : "text-muted-foreground"
@@ -1921,7 +1949,7 @@ export default function App() {
         </button>
 
         <button 
-          onClick={() => { setCurrentPage('profile'); setSelectedFriend(null); }}
+          onClick={() => { navigate('/'); setCurrentPage('profile'); setSelectedFriend(null); }}
           className={cn(
             "flex flex-col items-center gap-1 transition-all active:scale-90",
             currentPage === 'profile' ? "text-foreground scale-110" : "text-muted-foreground"
@@ -1946,7 +1974,7 @@ export default function App() {
               {confirmTx ? (
                 <div className="space-y-4">
                   <div className="flex justify-center mb-4">
-                    <SuperTroll state={confirmTx.status === '已確認' ? 'happy' : 'sweating'} />
+                    <SuperTroll state={confirmTx.status === 'confirmed' ? 'happy' : 'sweating'} />
                   </div>
                   <p className="text-xl font-sans font-bold">
                     <span className="text-red-500">{confirmTx.creatorName || '某人'}</span> 說你欠他 <span className="underline decoration-red-500 decoration-4 text-2xl font-black">${confirmTx.amount}</span>（<span className="italic">{confirmTx.item}</span>）
@@ -1966,7 +1994,7 @@ export default function App() {
                     </MonsterSpeechBubble>
                   )}
                   <div className="flex flex-col gap-4 mt-8">
-                    {confirmTx.status === '已確認' ? (
+                    {confirmTx.status === 'confirmed' ? (
                       <div className="p-4 rough-border-sm bg-green-50 flex flex-col items-center justify-center gap-2 text-green-700 font-bold">
                         <p>確認成功！粗哥摸摸頭。</p>
                         <CheckCircleIcon />
@@ -2152,8 +2180,8 @@ export default function App() {
 
                       <div className="flex justify-end py-2 pr-4 relative">
                         <div className="relative scale-110">
-                          <SuperTroll state={selectedTx.status === '已確認' ? 'happy' : 'sweating'} className="w-48 h-48" />
-                          {selectedTx.status === '已確認' && (
+                          <SuperTroll state={selectedTx.status === 'confirmed' ? 'happy' : 'sweating'} className="w-48 h-48" />
+                          {selectedTx.status === 'confirmed' && (
                             <motion.div 
                               initial={{ scale: 0, rotate: 0 }}
                               animate={{ scale: 1, rotate: 12 }}
@@ -2168,16 +2196,16 @@ export default function App() {
                   )}
 
                   <div className="space-y-4 pt-2">
-                    {!selectedTx.isPersonal && selectedTx.status !== '已結清' && (
+                    {!selectedTx.isPersonal && selectedTx.status !== 'settled' && (
                       <button 
                         onClick={() => toggleStatus(selectedTx.id)}
                         className={cn(
                           "w-full py-4 border-4 border-foreground font-black text-xl shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] dark:shadow-[6px_6px_0px_0px_rgba(255,255,255,1)] active:shadow-none active:translate-x-1 active:translate-y-1 transition-all flex items-center justify-center gap-3",
-                          selectedTx.status === '已確認' ? "bg-[#4ade80]" : "bg-yellow-400 text-black"
+                          selectedTx.status === 'confirmed' ? "bg-[#4ade80]" : "bg-yellow-400 text-black"
                         )}
                       >
                         <CheckCircleIcon size={28} />
-                        {selectedTx.status === '已確認' ? '結清此筆帳務' : '標記為已確認'}
+                        {selectedTx.status === 'confirmed' ? '結清此筆帳務' : '標記為confirmed'}
                       </button>
                     )}
                     
@@ -2200,7 +2228,7 @@ export default function App() {
                     </div>
 
                     <button 
-                      onClick={() => deleteTx(selectedTx.id)}
+                      onClick={() => handleDelete(selectedTx.id)}
                       className="w-full py-3 border-4 border-black bg-red-400 font-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-x-1 active:translate-y-1 transition-all flex items-center justify-center gap-2"
                     >
                       <Trash2Icon size={20} /> 丟進回收桶
@@ -2236,7 +2264,7 @@ export default function App() {
                 </h3>
                 <p className="text-sm font-bold opacity-60">
                   {pendingAction.action === 'force-delete' ? '此操作將從資料庫永久抹除該筆紀錄。' : 
-                   pendingAction.action === 'delete' ? '這筆帳務將會被標記為已刪除。' : '這筆帳務將會被標記為已結清。'}
+                   pendingAction.action === 'delete' ? '這筆帳務將會被標記為deleted。' : '這筆帳務將會被標記為settled。'}
                 </p>
                 <div className="flex gap-4 w-full mt-2">
                   <button 
@@ -2263,4 +2291,18 @@ export default function App() {
       </div>
     </div>
   );
+}
+
+
+const RecycleBinScreen = () => <MainScreen initialPath='/recycle-bin' />;
+
+export default function AppRoutes() {
+  const path = window.location.pathname === '/recycle-bin' ? '/recycle-bin' : '/';
+
+  const routes: Record<'/' | '/recycle-bin', React.ReactNode> = {
+    '/': <MainScreen initialPath='/' />,
+    '/recycle-bin': <RecycleBinScreen />,
+  };
+
+  return <>{routes[path]}</>;
 }
