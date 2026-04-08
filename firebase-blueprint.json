@@ -23,7 +23,7 @@
         "item": { "type": "string", "description": "What the debt was for." },
         "amount": { "type": "number" },
         "type": { "type": "string", "enum": ["借出", "借入"] },
-        "status": { "type": "string", "enum": ["待確認", "已確認"] },
+        "status": { "type": "string", "enum": ["pending", "confirmed", "settled", "deleted"] },
         "createdAt": { "type": "string", "format": "date-time" },
         "creatorUid": { "type": "string" },
         "creatorName": { "type": "string" }

@@ -346,6 +346,161 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
 
 // --- Main App ---
 
+// --- Hooks ---
+const useLongPress = (callback: () => void, duration = 1500) => {
+  const [isPressed, setIsPressed] = useState(false);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const start = () => {
+    setIsPressed(true);
+    timerRef.current = setTimeout(() => {
+      callback();
+      setIsPressed(false);
+    }, duration);
+  };
+
+  const stop = () => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    setIsPressed(false);
+  };
+
+  return {
+    onMouseDown: start,
+    onMouseUp: stop,
+    onMouseLeave: stop,
+    onTouchStart: start,
+    onTouchEnd: stop,
+    isPressed
+  };
+};
+
+// --- Components ---
+const TransactionCard = ({ tx, toggleStatus, shareLink, deleteTx, setSelectedTx, setAiMessage, db }: { tx: Transaction, toggleStatus: (id: string) => void, shareLink: (id: string) => void, deleteTx: (id: string) => void, setSelectedTx: any, setAiMessage: any, db: any }) => {
+  const longPress = useLongPress(() => {
+    updateDoc(doc(db, 'transactions', tx.id), { amount: tx.amount * -1 });
+    setAiMessage("粗哥：按住 1.5 秒負債變收入，要是現實也這麼容易，你早就財富自由了。");
+    if (navigator.vibrate) navigator.vibrate(200);
+  });
+
+  return (
+    <motion.div 
+      className="relative bg-card p-3 border-2 border-foreground shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] dark:shadow-[4px_4px_0px_0px_rgba(255,255,255,1)] transition-transform overflow-hidden flex flex-col justify-between min-h-[180px]"
+      animate={{ scale: longPress.isPressed ? 0.95 : 1 }}
+      {...{
+        onMouseDown: longPress.onMouseDown,
+        onMouseUp: longPress.onMouseUp,
+        onMouseLeave: longPress.onMouseLeave,
+        onTouchStart: longPress.onTouchStart,
+        onTouchEnd: longPress.onTouchEnd,
+      }}
+    >
+      {/* Confirmed Stamp for Debts */}
+      {!tx.isPersonal && tx.status === 'confirmed' && (
+        <motion.div 
+          initial={{ scale: 0, rotate: 0 }}
+          animate={{ scale: 1, rotate: 12 }}
+          className="absolute top-1 right-1 z-20 pointer-events-none"
+        >
+          <div className="border-2 border-red-600 rounded-full p-1 flex flex-col items-center justify-center rotate-[-15deg] bg-background/80 scale-75">
+            <span className="text-red-600 font-black text-[8px] uppercase tracking-tighter">confirmed ✅</span>
+          </div>
+        </motion.div>
+      )}
+
+      {/* "夯" Label for Personal Income */}
+      {tx.isPersonal && tx.type === '個人收入' && (
+        <div className="absolute top-1 right-1 z-20">
+          <div className="bg-red-600 text-white font-black text-[10px] px-1 py-0.5 border border-foreground rotate-[15deg]">
+            夯
+          </div>
+        </div>
+      )}
+
+      <div 
+        className="space-y-2 cursor-pointer flex-1"
+        onClick={() => setSelectedTx(tx)}
+      >
+        <div className="flex items-center justify-between">
+          <span className={cn(
+            "text-[8px] font-black uppercase px-1 py-0.5 border border-foreground",
+            (tx.type === '借出' || tx.type === '個人收入' || (tx.isPersonal && tx.amount > 0)) ? "bg-green-400" : "bg-red-400"
+          )}>
+            {tx.type === '借出' ? 'LEND' : tx.type === '借入' ? 'BORROW' : tx.type === '個人收入' ? '收入' : '支出'}
+          </span>
+          <span className="text-[8px] font-black opacity-40">
+            {(() => {
+              const d = new Date(tx.createdAt);
+              return `${d.getMonth() + 1}/${d.getDate()}`;
+            })()}
+          </span>
+        </div>
+        
+        <div className="flex items-start gap-2">
+          {tx.isPersonal && tx.type === '個人支出' && (
+            <div className="mt-1 p-1 bg-foreground text-background rounded-sm">
+              <TrendingDownIcon size={12} />
+            </div>
+          )}
+          {tx.isPersonal && tx.type === '個人收入' && (
+            <div className="mt-1 p-1 bg-foreground text-background rounded-sm">
+              <TrendingUpIcon size={12} />
+            </div>
+          )}
+          <div className="flex-1 overflow-hidden">
+            <span className="text-[6px] font-bold opacity-40 uppercase block">{tx.isPersonal ? '項目' : '項目 / 對象'}</span>
+            <h3 className="text-lg font-black leading-tight truncate">{tx.item}</h3>
+            <p className="text-[10px] font-bold opacity-60 truncate">{tx.isPersonal ? '個人開銷' : tx.name}</p>
+          </div>
+        </div>
+
+        <div>
+          <span className="text-[6px] font-bold opacity-40 uppercase block">金額</span>
+          <p className={cn(
+            "text-2xl font-black leading-none",
+            (tx.type === '借出' || tx.type === '個人收入' || (tx.isPersonal && tx.amount > 0)) ? "text-green-600" : "text-red-600"
+          )}>
+            {tx.isPersonal ? (tx.amount > 0 ? '+' : '') : (tx.type === '個人支出' ? '-' : tx.type === '個人收入' ? '+' : '')}${tx.amount}
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-2 pt-2 border-t border-foreground flex flex-col gap-2">
+        <div className="flex justify-between items-center">
+          {!tx.isPersonal ? (
+            <button 
+              onClick={() => toggleStatus(tx.id)}
+              className={cn(
+                "text-[8px] font-black px-2 py-1 border border-foreground transition-all active:scale-95 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] dark:shadow-[2px_2px_0px_0px_rgba(255,255,255,1)]",
+                tx.status === 'confirmed' ? "bg-green-400" : "bg-yellow-400"
+              )}
+            >
+              {tx.status === 'confirmed' ? '結清' : '討債'}
+            </button>
+          ) : (
+            <div className="text-[8px] font-black uppercase opacity-40">私帳紀錄</div>
+          )}
+          <div className="flex gap-1">
+            {!tx.isPersonal && (
+              <button 
+                onClick={() => shareLink(tx.id)}
+                className="p-1 border border-foreground bg-background text-foreground hover:bg-foreground hover:text-background transition-all shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] dark:shadow-[2px_2px_0px_0px_rgba(255,255,255,1)] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none"
+              >
+                <Share2Icon size={12} />
+              </button>
+            )}
+            <button 
+              onClick={() => deleteTx(tx.id)}
+              className="p-1 border border-foreground bg-red-400 hover:bg-red-500 text-white transition-all shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] dark:shadow-[2px_2px_0px_0px_rgba(255,255,255,1)] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none"
+            >
+              <Trash2Icon size={12} />
+            </button>
+          </div>
+        </div>
+      </div>
+    </motion.div>
+  );
+};
+
 export default function App() {
   const [currentPage, setCurrentPage] = useState<'entry' | 'ledger' | 'friends' | 'confirm' | 'add-friend' | 'profile' | 'trash'>('entry');
   const [confirmTx, setConfirmTx] = useState<Transaction | null>(null);
@@ -392,6 +547,15 @@ export default function App() {
     }, 300);
     return () => clearTimeout(timer);
   }, [inputText]);
+
+  // Apply theme
+  useEffect(() => {
+    if (theme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [theme]);
 
   // Initialize Auth
   useEffect(() => {
@@ -701,7 +865,7 @@ export default function App() {
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     
     const monthlyPersonal = transactions.filter(t => 
-      t.isPersonal && new Date(t.createdAt) >= startOfMonth && t.status !== '已刪除'
+      t.isPersonal && new Date(t.createdAt) >= startOfMonth && t.status !== 'deleted'
     );
 
     const income = monthlyPersonal
@@ -718,7 +882,7 @@ export default function App() {
   const stats = getMonthlyStats();
 
   const getFriendCredit = (friendName: string) => {
-    const friendTxs = transactions.filter(t => t.name === friendName && t.status !== '已結清');
+    const friendTxs = transactions.filter(t => t.name === friendName && t.status !== 'settled');
     if (friendTxs.length === 0) return { rank: '夯', label: '粗哥認證', color: 'text-red-600', icon: 'happy', msg: `這兄弟，夠意思！` };
     
     const maxDaysOverdue = Math.max(...friendTxs.map(t => {
@@ -1015,7 +1179,7 @@ export default function App() {
     const tx = transactions.find(t => t.id === id);
     if (tx) {
       // If it's confirmed, clicking the button now means "Settle"
-      if (tx.status === '已確認') {
+      if (tx.status === 'confirmed') {
         setPendingAction({ txId: id, action: 'settle' });
         return;
       }
@@ -1051,7 +1215,7 @@ export default function App() {
         setAiMessage("徹底消失了！(╬ಠ益ಠ)");
       } else if (action === 'settle') {
         await updateDoc(doc(db, 'transactions', txId), {
-          status: '已結清',
+          status: 'settled',
           deletedAt: new Date().toISOString()
         });
         setAiMessage("結清成功！已移至回收桶。(๑•̀ㅂ•́)و✧");
@@ -1151,19 +1315,38 @@ export default function App() {
         {/* Header (Black background as per screenshot) */}
         <header className="w-full flex justify-between items-center py-6 px-8 bg-foreground text-background z-30 shrink-0">
           <h1 className="text-4xl font-black tracking-tight italic">欸 粗哥</h1>
-          {!user && (
-            <button 
-              onClick={handleLogin}
-              className="bg-background text-foreground px-4 py-1 font-black text-xs border-2 border-background hover:bg-foreground hover:text-background transition-all active:scale-95"
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => {
+                if (!isPro) {
+                  setAiMessage("粗哥說：深色模式是 Pro 級特權，保護眼睛也要保護粗哥的錢包喔！");
+                  setIsParseError(true);
+                  setTimeout(() => {
+                    setAiMessage(null);
+                    setIsParseError(false);
+                  }, 5000);
+                  return;
+                }
+                setTheme(theme === 'light' ? 'dark' : 'light');
+              }}
+              className="p-2 border-2 border-background text-background hover:bg-background hover:text-foreground transition-all"
             >
-              登入
+              {theme === 'light' ? '🌙' : '☀️'}
             </button>
-          )}
-          {user && (
-            <div className="w-8 h-8 rounded-full border-2 border-background overflow-hidden">
-              <img src={user.photoURL || ''} alt="User" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-            </div>
-          )}
+            {!user && (
+              <button 
+                onClick={handleLogin}
+                className="bg-background text-foreground px-4 py-1 font-black text-xs border-2 border-background hover:bg-foreground hover:text-background transition-all active:scale-95"
+              >
+                登入
+              </button>
+            )}
+            {user && (
+              <div className="w-8 h-8 rounded-full border-2 border-background overflow-hidden">
+                <img src={user.photoURL || ''} alt="User" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+              </div>
+            )}
+          </div>
         </header>
 
         {/* Main Content Area (No Scroll) */}
@@ -1259,111 +1442,16 @@ export default function App() {
                   return (
                     <div className="grid grid-cols-2 gap-4">
                       {filteredTxs.map((tx) => (
-                        <div key={tx.id} className="relative bg-card p-3 border-2 border-foreground shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] dark:shadow-[4px_4px_0px_0px_rgba(255,255,255,1)] transition-transform hover:-translate-y-1 overflow-hidden flex flex-col justify-between min-h-[180px]">
-                          {/* Confirmed Stamp for Debts */}
-                          {!tx.isPersonal && tx.status === 'confirmed' && (
-                            <motion.div 
-                              initial={{ scale: 2, opacity: 0, rotate: -20 }}
-                              animate={{ scale: 1, opacity: 0.8, rotate: -15 }}
-                              className="absolute top-1 right-1 z-20 pointer-events-none"
-                            >
-                              <div className="border-2 border-red-600 rounded-full p-1 flex flex-col items-center justify-center rotate-[-15deg] bg-background/80 scale-75">
-                                <span className="text-red-600 font-black text-[8px] uppercase tracking-tighter">已確認 ✅</span>
-                              </div>
-                            </motion.div>
-                          )}
-
-                          {/* "夯" Label for Personal Income */}
-                          {tx.isPersonal && tx.type === '個人收入' && (
-                            <div className="absolute top-1 right-1 z-20">
-                              <div className="bg-red-600 text-white font-black text-[10px] px-1 py-0.5 border border-foreground rotate-[15deg]">
-                                夯
-                              </div>
-                            </div>
-                          )}
-
-                          <div 
-                            className="space-y-2 cursor-pointer flex-1"
-                            onClick={() => setSelectedTx(tx)}
-                          >
-                            <div className="flex items-center justify-between">
-                              <span className={cn(
-                                "text-[8px] font-black uppercase px-1 py-0.5 border border-foreground",
-                                (tx.type === '借出' || tx.type === '個人收入' || (tx.isPersonal && tx.amount > 0)) ? "bg-green-400" : "bg-red-400"
-                              )}>
-                                {tx.type === '借出' ? 'LEND' : tx.type === '借入' ? 'BORROW' : tx.type === '個人收入' ? '收入' : '支出'}
-                              </span>
-                              <span className="text-[8px] font-black opacity-40">
-                                {(() => {
-                                  const d = new Date(tx.createdAt);
-                                  return `${d.getMonth() + 1}/${d.getDate()}`;
-                                })()}
-                              </span>
-                            </div>
-                            
-                            <div className="flex items-start gap-2">
-                              {tx.isPersonal && tx.type === '個人支出' && (
-                                <div className="mt-1 p-1 bg-foreground text-background rounded-sm">
-                                  <TrendingDownIcon size={12} />
-                                </div>
-                              )}
-                              {tx.isPersonal && tx.type === '個人收入' && (
-                                <div className="mt-1 p-1 bg-foreground text-background rounded-sm">
-                                  <TrendingUpIcon size={12} />
-                                </div>
-                              )}
-                              <div className="flex-1 overflow-hidden">
-                                <span className="text-[6px] font-bold opacity-40 uppercase block">{tx.isPersonal ? '項目' : '項目 / 對象'}</span>
-                                <h3 className="text-lg font-black leading-tight truncate">{tx.item}</h3>
-                                <p className="text-[10px] font-bold opacity-60 truncate">{tx.isPersonal ? '個人開銷' : tx.name}</p>
-                              </div>
-                            </div>
-
-                            <div>
-                              <span className="text-[6px] font-bold opacity-40 uppercase block">金額</span>
-                              <p className={cn(
-                                "text-2xl font-black leading-none",
-                                (tx.type === '借出' || tx.type === '個人收入' || (tx.isPersonal && tx.amount > 0)) ? "text-green-600" : "text-red-600"
-                              )}>
-                                {tx.isPersonal ? (tx.amount > 0 ? '+' : '') : (tx.type === '個人支出' ? '-' : tx.type === '個人收入' ? '+' : '')}${tx.amount}
-                              </p>
-                            </div>
-                          </div>
-
-                          <div className="mt-2 pt-2 border-t border-foreground flex flex-col gap-2">
-                            <div className="flex justify-between items-center">
-                              {!tx.isPersonal ? (
-                                <button 
-                                  onClick={() => toggleStatus(tx.id)}
-                                  className={cn(
-                                    "text-[8px] font-black px-2 py-1 border border-foreground transition-all active:scale-95 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] dark:shadow-[2px_2px_0px_0px_rgba(255,255,255,1)]",
-                                    tx.status === 'confirmed' ? "bg-green-400" : "bg-yellow-400"
-                                  )}
-                                >
-                                  {tx.status === 'confirmed' ? '結清' : '討債'}
-                                </button>
-                              ) : (
-                                <div className="text-[8px] font-black uppercase opacity-40">私帳紀錄</div>
-                              )}
-                              <div className="flex gap-1">
-                                {!tx.isPersonal && (
-                                  <button 
-                                    onClick={() => shareLink(tx.id)}
-                                    className="p-1 border border-foreground bg-background text-foreground hover:bg-foreground hover:text-background transition-all shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] dark:shadow-[2px_2px_0px_0px_rgba(255,255,255,1)] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none"
-                                  >
-                                    <Share2Icon size={12} />
-                                  </button>
-                                )}
-                                <button 
-                                  onClick={() => deleteTx(tx.id)}
-                                  className="p-1 border border-foreground bg-red-400 hover:bg-red-500 text-white transition-all shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] dark:shadow-[2px_2px_0px_0px_rgba(255,255,255,1)] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none"
-                                >
-                                  <Trash2Icon size={12} />
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
+                        <TransactionCard 
+                          key={tx.id} 
+                          tx={tx} 
+                          toggleStatus={toggleStatus} 
+                          shareLink={shareLink} 
+                          deleteTx={deleteTx} 
+                          setSelectedTx={setSelectedTx} 
+                          setAiMessage={setAiMessage}
+                          db={db}
+                        />
                       ))}
                     </div>
                   );
@@ -1433,53 +1521,48 @@ export default function App() {
                     return isTabMatch && isTrash;
                   });
                   
-                  if (trashTxs.length === 0) {
-                    return (
-                      <div className="flex flex-col items-center justify-center py-20 gap-4">
-                        <SuperTroll state="idle" className="w-48 h-48 opacity-20 grayscale" />
-                        <p className="text-xl font-black text-muted-foreground italic">「這裡空蕩蕩的，看來大家都很夯。」</p>
-                      </div>
-                    );
-                  }
-
                   return (
-                    <div className="grid grid-cols-1 gap-6">
-                      {trashTxs.map((tx) => (
-                        <div key={tx.id} className="bg-card p-4 border-4 border-foreground shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] dark:shadow-[4px_4px_0px_0px_rgba(255,255,255,1)] flex flex-col gap-3">
-                          <div className="flex justify-between items-start">
-                            <div>
-                              <span className={cn(
-                                "text-[10px] font-black px-1 border-2 border-foreground bg-red-400"
-                              )}>
-                                DELETED
-                              </span>
-                              <h3 className="text-xl font-black mt-1 text-foreground">{tx.item || '未命名項目'}</h3>
-                              <p className="text-xs font-bold opacity-60 text-foreground">{tx.isPersonal ? '個人開銷' : tx.name} • ${tx.amount}</p>
-                            </div>
-                            <div className="text-right">
-                              <p className="text-[10px] font-bold opacity-40 text-foreground">
-                                {new Date(tx.createdAt).toLocaleDateString()}
-                              </p>
-                            </div>
-                          </div>
-                          
-                          <div className="flex gap-2 mt-2">
-                            <button 
-                              onClick={() => restoreTx(tx.id)}
-                              className="flex-1 py-2 bg-background border-2 border-foreground font-black text-xs shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] dark:shadow-[2px_2px_0px_0px_rgba(255,255,255,1)] active:shadow-none active:translate-x-0.5 active:translate-y-0.5 transition-all flex items-center justify-center gap-2 text-foreground"
-                            >
-                              還原 (Restore)
-                            </button>
-                            <button 
-                              onClick={() => permanentDeleteTx(tx.id)}
-                              className="flex-1 py-2 bg-red-400 text-white border-2 border-foreground font-black text-xs shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] dark:shadow-[2px_2px_0px_0px_rgba(255,255,255,1)] active:shadow-none active:translate-x-0.5 active:translate-y-0.5 transition-all flex items-center justify-center gap-2"
-                            >
-                              徹底刪除 (Force)
-                            </button>
-                          </div>
+                    <>
+                      {/* Quote */}
+                      <div className="mt-8 text-center">
+                        <p className="text-red-500 font-black text-lg">『粗哥：垃圾桶只能放 14 天，沒錢買 Pro 就乖乖定時清理啦！』</p>
+                      </div>
+
+                      {trashTxs.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center py-20 gap-4">
+                          <SuperTroll state="idle" className="w-48 h-48 opacity-20 grayscale" />
+                          <p className="text-xl font-black text-muted-foreground italic">「這裡空蕩蕩的，看來大家都很夯。」</p>
                         </div>
-                      ))}
-                    </div>
+                      ) : (
+                        <div className="grid grid-cols-1 gap-6 mt-8">
+                          {trashTxs.map((tx) => (
+                            <div key={tx.id} className="bg-card p-4 border-4 border-foreground shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] dark:shadow-[4px_4px_0px_0px_rgba(255,255,255,1)] flex flex-col gap-3">
+                              <div className="flex justify-between items-start">
+                                <div>
+                                  <h3 className="text-xl font-black">{tx.item}</h3>
+                                  <p className="text-sm font-bold opacity-60">刪除於: {new Date(tx.deletedAt || '').toLocaleDateString()}</p>
+                                </div>
+                                <span className="text-2xl font-black">${Math.abs(tx.amount)}</span>
+                              </div>
+                              <div className="flex gap-2 mt-2">
+                                <button 
+                                  onClick={() => restoreTx(tx.id)}
+                                  className="flex-1 py-2 bg-background border-2 border-foreground font-black text-xs shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] dark:shadow-[2px_2px_0px_0px_rgba(255,255,255,1)] active:shadow-none active:translate-x-0.5 active:translate-y-0.5 transition-all flex items-center justify-center gap-2 text-foreground"
+                                >
+                                  還原 (Restore)
+                                </button>
+                                <button 
+                                  onClick={() => setPendingAction({ txId: tx.id, action: 'force-delete' })}
+                                  className="flex-1 py-2 bg-red-400 text-white border-2 border-foreground font-black text-xs shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] dark:shadow-[2px_2px_0px_0px_rgba(255,255,255,1)] active:shadow-none active:translate-x-0.5 active:translate-y-0.5 transition-all flex items-center justify-center gap-2"
+                                >
+                                  徹底刪除 (Force)
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </>
                   );
                 })()}
               </motion.div>
@@ -1882,7 +1965,6 @@ export default function App() {
               </motion.div>
             </div>
           </div>
-        </main>
 
 
 
@@ -1946,7 +2028,7 @@ export default function App() {
               {confirmTx ? (
                 <div className="space-y-4">
                   <div className="flex justify-center mb-4">
-                    <SuperTroll state={confirmTx.status === '已確認' ? 'happy' : 'sweating'} />
+                    <SuperTroll state={confirmTx.status === 'confirmed' ? 'happy' : 'sweating'} />
                   </div>
                   <p className="text-xl font-sans font-bold">
                     <span className="text-red-500">{confirmTx.creatorName || '某人'}</span> 說你欠他 <span className="underline decoration-red-500 decoration-4 text-2xl font-black">${confirmTx.amount}</span>（<span className="italic">{confirmTx.item}</span>）
@@ -1966,7 +2048,7 @@ export default function App() {
                     </MonsterSpeechBubble>
                   )}
                   <div className="flex flex-col gap-4 mt-8">
-                    {confirmTx.status === '已確認' ? (
+                    {confirmTx.status === 'confirmed' ? (
                       <div className="p-4 rough-border-sm bg-green-50 flex flex-col items-center justify-center gap-2 text-green-700 font-bold">
                         <p>確認成功！粗哥摸摸頭。</p>
                         <CheckCircleIcon />
@@ -2152,8 +2234,8 @@ export default function App() {
 
                       <div className="flex justify-end py-2 pr-4 relative">
                         <div className="relative scale-110">
-                          <SuperTroll state={selectedTx.status === '已確認' ? 'happy' : 'sweating'} className="w-48 h-48" />
-                          {selectedTx.status === '已確認' && (
+                          <SuperTroll state={selectedTx.status === 'confirmed' ? 'happy' : 'sweating'} className="w-48 h-48" />
+                          {selectedTx.status === 'confirmed' && (
                             <motion.div 
                               initial={{ scale: 0, rotate: 0 }}
                               animate={{ scale: 1, rotate: 12 }}
@@ -2168,16 +2250,16 @@ export default function App() {
                   )}
 
                   <div className="space-y-4 pt-2">
-                    {!selectedTx.isPersonal && selectedTx.status !== '已結清' && (
+                    {!selectedTx.isPersonal && selectedTx.status !== 'settled' && (
                       <button 
                         onClick={() => toggleStatus(selectedTx.id)}
                         className={cn(
                           "w-full py-4 border-4 border-foreground font-black text-xl shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] dark:shadow-[6px_6px_0px_0px_rgba(255,255,255,1)] active:shadow-none active:translate-x-1 active:translate-y-1 transition-all flex items-center justify-center gap-3",
-                          selectedTx.status === '已確認' ? "bg-[#4ade80]" : "bg-yellow-400 text-black"
+                          selectedTx.status === 'confirmed' ? "bg-[#4ade80]" : "bg-yellow-400 text-black"
                         )}
                       >
                         <CheckCircleIcon size={28} />
-                        {selectedTx.status === '已確認' ? '結清此筆帳務' : '標記為已確認'}
+                        {selectedTx.status === 'confirmed' ? '結清此筆帳務' : '標記為已確認'}
                       </button>
                     )}
                     
@@ -2260,6 +2342,7 @@ export default function App() {
           </>
         )}
       </AnimatePresence>
+      </main>
       </div>
     </div>
   );

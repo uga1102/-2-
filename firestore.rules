@@ -15,7 +15,7 @@ service cloud.firestore {
              data.item is string && data.item.size() > 0 && data.item.size() < 200 &&
              data.amount is number &&
              data.type in ['借出', '借入', '個人收入', '個人支出'] &&
-             data.status in ['待確認', '已確認', '已結清', '已刪除'] &&
+             data.status in ['pending', 'confirmed', 'settled', 'deleted'] &&
              data.createdAt is string &&
              data.creatorUid == request.auth.uid &&
              (!('tag' in data) || (data.tag == null || (data.tag is string && data.tag.size() < 50))) &&
@@ -47,9 +47,9 @@ service cloud.firestore {
       allow update: if (
         // Creator can update fields, ensuring creatorUid doesn't change
         (isAuthenticated() && resource.data.creatorUid == request.auth.uid && request.resource.data.creatorUid == request.auth.uid) ||
-        // Receiver can only update status to '已確認'
+        // Receiver can only update status to 'confirmed'
         (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) && 
-         request.resource.data.status == '已確認')
+         request.resource.data.status == 'confirmed')
       );
       
       // Only the creator can delete
