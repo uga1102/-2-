@@ -1308,7 +1308,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-[#f0f0f0] flex justify-center items-center p-0 sm:p-6 font-sans">
+    <div className="min-h-screen bg-[#f0f0f0] dark:bg-neutral-900 flex justify-center items-center p-0 sm:p-6 font-sans">
       {/* Simulated Mobile Device Frame */}
       <div className="w-full max-w-[430px] h-screen sm:h-[880px] bg-background flex flex-col relative sm:rounded-[50px] sm:border-[12px] sm:border-foreground sm:shadow-[0_30px_60px_rgba(0,0,0,0.3)] overflow-hidden">
         
@@ -1351,7 +1351,8 @@ export default function App() {
 
         {/* Main Content Area (No Scroll) */}
         <main className="w-full flex-1 relative overflow-hidden bg-background flex flex-col">
-          <div className="flex transition-transform duration-500 ease-out h-full" style={{ transform: `translateX(${currentPage === 'ledger' ? '0%' : currentPage === 'entry' ? '-100%' : currentPage === 'friends' ? '-200%' : currentPage === 'profile' ? '-300%' : '0%'})` }}>
+          {/* Recycle Bin occupies slot 1 only while visible, so 'trash' and 'entry' both map to -100% */}
+          <div className="flex transition-transform duration-500 ease-out h-full" style={{ transform: `translateX(${currentPage === 'ledger' ? '0%' : currentPage === 'trash' || currentPage === 'entry' ? '-100%' : currentPage === 'friends' ? '-200%' : currentPage === 'profile' ? '-300%' : '0%'})` }}>
             {/* Ledger Page */}
             <div className="w-full flex-shrink-0 px-6 py-8 overflow-y-auto">
               <motion.div
@@ -1461,7 +1462,7 @@ export default function App() {
 
             {/* Recycle Bin Page */}
             <div className={cn(
-              "w-full flex-shrink-0 px-6 py-8 overflow-y-auto bg-gray-50",
+              "w-full flex-shrink-0 px-6 py-8 overflow-y-auto bg-muted",
               currentPage === 'trash' ? "block" : "hidden"
             )}>
               <motion.div
@@ -1508,7 +1509,8 @@ export default function App() {
                 {(() => {
                   const trashTxs = transactions.filter(t => {
                     const isTabMatch = ledgerTab === 'debts' ? !t.isPersonal : t.isPersonal;
-                    const isTrash = t.status === 'deleted';
+                    // Settled debts are moved here too (see handleConfirmAction)
+                    const isTrash = t.status === 'deleted' || t.status === 'settled';
                     
                     // Filter out items older than 14 days
                     if (isTrash && t.deletedAt) {
@@ -1540,7 +1542,7 @@ export default function App() {
                               <div className="flex justify-between items-start">
                                 <div>
                                   <h3 className="text-xl font-black">{tx.item}</h3>
-                                  <p className="text-sm font-bold opacity-60">刪除於: {new Date(tx.deletedAt || '').toLocaleDateString()}</p>
+                                  <p className="text-sm font-bold opacity-60">{tx.status === 'settled' ? '結清於' : '刪除於'}: {new Date(tx.deletedAt || '').toLocaleDateString()}</p>
                                 </div>
                                 <span className="text-2xl font-black">${Math.abs(tx.amount)}</span>
                               </div>
@@ -1940,9 +1942,7 @@ export default function App() {
                             }, 5000);
                             return;
                           }
-                          const newTheme = theme === 'light' ? 'dark' : 'light';
-                          setTheme(newTheme);
-                          document.documentElement.classList.toggle('dark');
+                          setTheme(theme === 'light' ? 'dark' : 'light');
                         }}
                         className={cn(
                           "w-14 h-8 rounded-full border-4 border-foreground relative transition-colors",
@@ -2309,7 +2309,7 @@ export default function App() {
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
-              className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[90%] max-w-sm bg-white border-4 border-black p-6 z-[101] shadow-[8px_8px_0px_0px_rgba(0,0,0,1)]"
+              className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[90%] max-w-sm bg-background text-foreground border-4 border-foreground p-6 z-[101] shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] dark:shadow-[8px_8px_0px_0px_rgba(255,255,255,1)]"
             >
               <div className="flex flex-col items-center text-center gap-4">
                 <SuperTroll state={pendingAction.action === 'force-delete' ? 'shocked' : 'sweating'} className="w-32 h-32" />
@@ -2323,15 +2323,15 @@ export default function App() {
                 <div className="flex gap-4 w-full mt-2">
                   <button 
                     onClick={() => setPendingAction(null)}
-                    className="flex-1 py-3 border-4 border-black bg-white font-black hover:bg-gray-100 transition-all"
+                    className="flex-1 py-3 border-4 border-foreground bg-background font-black hover:bg-muted transition-all"
                   >
                     先不要
                   </button>
                   <button 
                     onClick={handleConfirmAction}
                     className={cn(
-                      "flex-1 py-3 border-4 border-black font-black transition-all",
-                      pendingAction.action === 'force-delete' ? "bg-red-500 text-white" : "bg-black text-white"
+                      "flex-1 py-3 border-4 border-foreground font-black transition-all",
+                      pendingAction.action === 'force-delete' ? "bg-red-500 text-white" : "bg-foreground text-background"
                     )}
                   >
                     {pendingAction.action === 'force-delete' ? '確定刪除' : '丟掉！'}
